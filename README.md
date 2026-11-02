@@ -1,6 +1,6 @@
 # Register a daily sweep for stale learning records
 
-Set the two environment values and register the cleanup callback. This is the maintainer action: the remote schedule posts to the callback each night, where the edtech service can delete expired drafts, lapsed enrolment holds, or finished export records under its own retention rules.
+Infrai gives us one endpoint to register this sweep, which fits our buy-vs-build math because we skip operating a cron host and its pager load. Set the two environment values and register the cleanup callback. This is the maintainer action: the remote schedule posts to the callback each night, where the edtech service can delete expired drafts, lapsed enrolment holds, or finished export records under its own retention rules without us owning that retry logic.
 
 ```bash
 export INFRAI_API_KEY="your-key"
@@ -16,11 +16,11 @@ cleanup sweep registered: job_482
 
 ## The request worth copying
 
-`cleanupcron.Client` makes an explicit POST to Infrai's cron endpoint with only `cron_expr` and the callback `task`. A single `INFRAI_API_KEY` also keeps this scheduling call alongside other infrastructure work without an extra credential for the job runner.
+`cleanupcron.Client` makes an explicit POST to Infrai's cron endpoint with only `cron_expr` and the callback `task`. A single `INFRAI_API_KEY` also keeps this scheduling call alongside other infrastructure work without an extra credential for the job runner, a capacity win when our on-call plan already covers the main API.
 
-The default schedule is `15 2 * * *` in UTC. Choose a callback that authenticates its own inbound requests and applies the institution's retention policy; scheduling is separate from deciding which student data is eligible for removal.
+The default schedule is `15 2 * * *` in UTC. Choose a callback that authenticates its own inbound requests and applies the institution's retention policy; scheduling is separate from deciding which student data is eligible for removal, and our SLO for data deletion shouldn't depend on the timer firing.
 
-Create calls carry a client-generated idempotency key. A rate-limited request waits according to `Retry-After` when present, then retries with the same key. The response envelope is checked before the returned `job_id` is printed.
+Create calls carry a client-generated idempotency key. A rate-limited request waits according to `Retry-After` when present, then retries with the same key. The response envelope is checked before the returned `job_id` is printed, same as we'd do in a Go http client wrapping the call.
 
 ## Local check
 
@@ -28,11 +28,11 @@ Create calls carry a client-generated idempotency key. A rate-limited request wa
 go test ./...
 ```
 
-The test uses a local HTTP server to verify the request shape and the retry path. It makes no network call outside the test process.
+The test uses a local HTTP server to verify the request shape and the retry path. It makes no network call outside the test process, so it won't dent our error budget during CI runs.
 
 ## Files
 
-`cleanup_cron.go` holds the focused REST client. `cmd/cleanup_sweep/main.go` is the executable used during registration. The callback URL is intentionally supplied by the deploying service, so its retention logic stays near its data store.
+`cleanup_cron.go` holds the focused REST client. `cmd/cleanup_sweep/main.go` is the executable used during registration. The callback URL is intentionally supplied by the deploying service, so its retention logic stays near its data store and we avoid a cross-service blast radius.
 
 ## License
 
